@@ -58,6 +58,38 @@ catch (Exception ex)
     Environment.Exit(1);
 }
 
+// === Включение режима восстановления на всех узлах ===
+Console.WriteLine("[RECOVERY] Enabling recovery mode on all nodes...");
+var recoveryTasks = peers.Select(async peer =>
+{
+    try
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
+        
+        using var stream = client.GetStream();
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        using var reader = new BinaryReader(stream, Encoding.UTF8);
+        
+        writer.Write("RECOVERY:");
+        writer.Flush();
+        
+        var response = reader.ReadString();
+        Console.WriteLine($"[RECOVERY] Node {peer.Ip}:{peer.Port} - {response}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[WARN] Failed to enable recovery on {peer.Ip}:{peer.Port}: {ex.Message}");
+    }
+});
+
+await Task.WhenAll(recoveryTasks);
+Console.WriteLine("[RECOVERY] Recovery mode enabled on all nodes");
+
+// === Ожидание для перехвата чанков ===
+Console.WriteLine("[WAIT] Waiting 5 seconds for chunks to be intercepted...");
+await Task.Delay(5000);
+
 // === Восстановление чанков ===
 var chunks = new Dictionary<int, byte[]>();
 var consecutiveEmpty = 0;
@@ -112,6 +144,34 @@ while (consecutiveEmpty < 10)
     
     chunkIndex++;
 }
+
+// === Выключение режима восстановления на всех узлах ===
+Console.WriteLine("[NORMAL] Disabling recovery mode on all nodes...");
+var normalTasks = peers.Select(async peer =>
+{
+    try
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
+        
+        using var stream = client.GetStream();
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        using var reader = new BinaryReader(stream, Encoding.UTF8);
+        
+        writer.Write("NORMAL:");
+        writer.Flush();
+        
+        var response = reader.ReadString();
+        Console.WriteLine($"[NORMAL] Node {peer.Ip}:{peer.Port} - {response}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[WARN] Failed to disable recovery on {peer.Ip}:{peer.Port}: {ex.Message}");
+    }
+});
+
+await Task.WhenAll(normalTasks);
+Console.WriteLine("[NORMAL] Normal mode enabled on all nodes");
 
 // === Сохранение результата ===
 if (chunks.Count == 0)

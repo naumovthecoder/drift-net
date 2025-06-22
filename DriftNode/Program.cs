@@ -4,8 +4,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
-// === In-memory хранилище чанков ===
-Dictionary<string, byte[]> MemoryStore = new();
+// === Временное хранилище для перехвата чанков ===
+// Используется только когда узел работает в режиме восстановления
+Dictionary<string, byte[]> TempChunkStore = new();
+bool isRecoveryMode = false;
 
 // === Конфигурация узла ===
 var coordinatorUrl = Environment.GetEnvironmentVariable("COORDINATOR_URL") ?? "http://localhost:8000";
@@ -34,11 +36,11 @@ Console.WriteLine($"[LISTENING] Node {nodeId} on port {port}");
 while (true)
 {
     var client = await listener.AcceptTcpClientAsync();
-    _ = Task.Run(() => HandleClient(client, coordinatorUrl, MemoryStore));
+    _ = Task.Run(() => HandleClient(client, coordinatorUrl));
 }
 
 // === Обработка входящего соединения ===
-async Task HandleClient(TcpClient client, string coordinatorUrl, Dictionary<string, byte[]> memoryStore)
+async Task HandleClient(TcpClient client, string coordinatorUrl)
 {
     try
     {
@@ -53,29 +55,62 @@ async Task HandleClient(TcpClient client, string coordinatorUrl, Dictionary<stri
         {
             // GET-запрос для получения чанка
             var chunkId = firstLine.Substring(4); // Убираем "GET:"
-            await HandleGetRequest(writer, chunkId, memoryStore);
+            await HandleGetRequest(writer, chunkId);
+        }
+        else if (firstLine.StartsWith("RECOVERY:"))
+        {
+            // Включение режима восстановления
+            isRecoveryMode = true;
+            Console.WriteLine("[RECOVERY] Mode enabled - will intercept chunks");
+            writer.Write("OK");
+            writer.Flush();
+        }
+        else if (firstLine.StartsWith("NORMAL:"))
+        {
+            // Выключение режима восстановления
+            isRecoveryMode = false;
+            TempChunkStore.Clear();
+            Console.WriteLine("[NORMAL] Mode enabled - streaming only");
+            writer.Write("OK");
+            writer.Flush();
         }
         else
         {
-            // Обычный запрос для сохранения чанка
+            // Обычный запрос для пересылки чанка
             var chunkId = firstLine;
             var ttl = reader.ReadInt32();
             var payloadSize = reader.ReadInt32();
-            var payload = reader.ReadBytes(payloadSize);
 
-            Console.WriteLine($"[RECEIVED] Chunk {chunkId} | TTL={ttl} | Size={payload.Length} bytes");
+            Console.WriteLine($"[RECEIVED] Chunk {chunkId} | TTL={ttl} | Size={payloadSize} bytes");
 
-            // Сохраняем чанк в памяти
-            memoryStore[chunkId] = payload;
-            Console.WriteLine($"[STORED] Chunk {chunkId} in memory");
-
-            if (ttl <= 0)
+            // Если включен режим восстановления, временно сохраняем чанк
+            if (isRecoveryMode)
             {
-                Console.WriteLine($"[DROPPED] Chunk {chunkId} expired");
-                return;
-            }
+                var payload = reader.ReadBytes(payloadSize);
+                TempChunkStore[chunkId] = payload;
+                Console.WriteLine($"[INTERCEPTED] Chunk {chunkId} for recovery");
+                
+                if (ttl <= 0)
+                {
+                    Console.WriteLine($"[DROPPED] Chunk {chunkId} expired");
+                    return;
+                }
 
-            await SendToRandomPeerAsync(chunkId, ttl, payload, coordinatorUrl);
+                // Пересылаем чанк дальше
+                await ForwardChunkAsync(chunkId, ttl, payload, coordinatorUrl);
+            }
+            else
+            {
+                // НЕ сохраняем чанк в памяти - только пересылаем дальше
+                if (ttl <= 0)
+                {
+                    Console.WriteLine($"[DROPPED] Chunk {chunkId} expired");
+                    return;
+                }
+
+                // Пересылаем чанк дальше через стрим
+                await ForwardChunkStreamAsync(chunkId, ttl, payloadSize, reader, coordinatorUrl);
+            }
         }
     }
     catch (Exception ex)
@@ -85,27 +120,81 @@ async Task HandleClient(TcpClient client, string coordinatorUrl, Dictionary<stri
 }
 
 // === Обработка GET-запроса ===
-async Task HandleGetRequest(BinaryWriter writer, string chunkId, Dictionary<string, byte[]> memoryStore)
+async Task HandleGetRequest(BinaryWriter writer, string chunkId)
 {
     Console.WriteLine($"[GET] Request for chunk {chunkId}");
     
-    if (memoryStore.TryGetValue(chunkId, out var payload))
+    // Проверяем временное хранилище (только в режиме восстановления)
+    if (isRecoveryMode && TempChunkStore.TryGetValue(chunkId, out var payload))
     {
         writer.Write(payload.Length);
         writer.Write(payload);
         writer.Flush();
-        Console.WriteLine($"[FOUND] Chunk {chunkId} ({payload.Length} bytes)");
+        Console.WriteLine($"[FOUND] Chunk {chunkId} ({payload.Length} bytes) from temp store");
     }
     else
     {
         writer.Write(0); // payloadLength = 0 означает, что чанк не найден
         writer.Flush();
-        Console.WriteLine($"[MISSING] Chunk {chunkId}");
+        Console.WriteLine($"[MISSING] Chunk {chunkId} - not stored in memory");
     }
 }
 
-// === Пересылка чанка следующему узлу ===
-static async Task SendToRandomPeerAsync(string chunkId, int ttl, byte[] payload, string coordinatorUrl)
+// === Пересылка чанка через стрим без сохранения в памяти ===
+static async Task ForwardChunkStreamAsync(string chunkId, int ttl, int payloadSize, BinaryReader reader, string coordinatorUrl)
+{
+    using var httpClient = new HttpClient();
+    try
+    {
+        var response = await httpClient.GetStringAsync($"{coordinatorUrl}/random-peers?count=1");
+        var peers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (peers is null || peers.Count == 0)
+        {
+            Console.WriteLine("[WARN] No peers found");
+            return;
+        }
+
+        var peer = peers.First();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
+
+        using var stream = client.GetStream();
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+
+        // Записываем заголовок
+        writer.Write(chunkId);
+        writer.Write(ttl - 1);
+        writer.Write(payloadSize);
+
+        // Пересылаем данные чанка напрямую из входящего стрима в исходящий
+        var buffer = new byte[8192]; // 8KB буфер
+        var remainingBytes = payloadSize;
+        
+        while (remainingBytes > 0)
+        {
+            var bytesToRead = Math.Min(buffer.Length, remainingBytes);
+            var bytesRead = reader.Read(buffer, 0, bytesToRead);
+            
+            if (bytesRead == 0) break; // Конец стрима
+            
+            writer.Write(buffer, 0, bytesRead);
+            remainingBytes -= bytesRead;
+        }
+        
+        writer.Flush();
+
+        Console.WriteLine($"[FORWARDED] Chunk {chunkId} → {peer.Ip}:{peer.Port} (TTL={ttl - 1}) via stream");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[FORWARD_ERROR] {ex.Message}");
+    }
+}
+
+// === Пересылка чанка из памяти (для режима восстановления) ===
+static async Task ForwardChunkAsync(string chunkId, int ttl, byte[] payload, string coordinatorUrl)
 {
     using var httpClient = new HttpClient();
     try
