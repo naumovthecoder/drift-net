@@ -1,0 +1,399 @@
+version: "3.8"
+
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: DriftCoordinator/Dockerfile
+    container_name: coordinator
+    ports:
+      - "8000:8000"
+    networks:
+      - driftnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/peers"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# 20 nodes
+  node1:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node1
+    environment:
+      - NODE_ID=node-1
+      - PORT=5001
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5001:5001"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node2:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node2
+    environment:
+      - NODE_ID=node-2
+      - PORT=5002
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5002:5002"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node3:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node3
+    environment:
+      - NODE_ID=node-3
+      - PORT=5003
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5003:5003"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node4:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node4
+    environment:
+      - NODE_ID=node-4
+      - PORT=5004
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5004:5004"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node5:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node5
+    environment:
+      - NODE_ID=node-5
+      - PORT=5005
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5005:5005"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node6:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node6
+    environment:
+      - NODE_ID=node-6
+      - PORT=5006
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5006:5006"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node7:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node7
+    environment:
+      - NODE_ID=node-7
+      - PORT=5007
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5007:5007"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node8:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node8
+    environment:
+      - NODE_ID=node-8
+      - PORT=5008
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5008:5008"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node9:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node9
+    environment:
+      - NODE_ID=node-9
+      - PORT=5009
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5009:5009"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node10:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node10
+    environment:
+      - NODE_ID=node-10
+      - PORT=5010
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5010:5010"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node11:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node11
+    environment:
+      - NODE_ID=node-11
+      - PORT=5011
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5011:5011"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node12:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node12
+    environment:
+      - NODE_ID=node-12
+      - PORT=5012
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5012:5012"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node13:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node13
+    environment:
+      - NODE_ID=node-13
+      - PORT=5013
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5013:5013"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node14:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node14
+    environment:
+      - NODE_ID=node-14
+      - PORT=5014
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5014:5014"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node15:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node15
+    environment:
+      - NODE_ID=node-15
+      - PORT=5015
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5015:5015"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node16:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node16
+    environment:
+      - NODE_ID=node-16
+      - PORT=5016
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5016:5016"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node17:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node17
+    environment:
+      - NODE_ID=node-17
+      - PORT=5017
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5017:5017"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node18:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node18
+    environment:
+      - NODE_ID=node-18
+      - PORT=5018
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5018:5018"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node19:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node19
+    environment:
+      - NODE_ID=node-19
+      - PORT=5019
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5019:5019"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  node20:
+    build:
+      context: .
+      dockerfile: DriftNode/Dockerfile
+    container_name: node20
+    environment:
+      - NODE_ID=node-20
+      - PORT=5020
+      - COORDINATOR_URL=http://coordinator:8000
+    ports:
+      - "5020:5020"
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+
+  uploader:
+    build:
+      context: .
+      dockerfile: DriftUploader/Dockerfile
+    container_name: uploader
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+      - CHUNK_SIZE=256000
+      - TTL=30
+    volumes:
+      - ./testfile.txt:/app/testfile.txt:ro
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    tty: true
+    stdin_open: true
+
+  getter:
+    build:
+      context: .
+      dockerfile: DriftGetter/Dockerfile
+    container_name: getter
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+    volumes:
+      - ./output:/app/output
+    networks:
+      - driftnet
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    tty: true
+    stdin_open: true
+
+networks:
+  driftnet:
+    driver: bridge 
