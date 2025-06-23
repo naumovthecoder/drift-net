@@ -28,7 +28,7 @@ app.MapGet("/next-peer", () =>
 {
     lock (routingLock)
     {
-        if (peers.Count == 0)
+        if (peers.IsEmpty)
         {
             return Results.NotFound("No peers available");
         }
@@ -36,7 +36,7 @@ app.MapGet("/next-peer", () =>
         var peerList = peers.Values.ToList();
         var nextPeer = peerList[routingIndex % peerList.Count];
         routingIndex = (routingIndex + 1) % peerList.Count;
-        
+
         Console.WriteLine($"Routing to peer: {nextPeer.Id} ({nextPeer.Ip}:{nextPeer.Port}) [index: {routingIndex}]");
         return Results.Ok(nextPeer);
     }
@@ -45,7 +45,7 @@ app.MapGet("/next-peer", () =>
 // === Эндпоинт для получения случайного узла (для обратной совместимости) ===
 app.MapGet("/random-peer", () =>
 {
-    if (peers.Count == 0)
+    if (peers.IsEmpty)
     {
         return Results.NotFound("No peers available");
     }

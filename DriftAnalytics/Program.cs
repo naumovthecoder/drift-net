@@ -1,220 +1,224 @@
-using DriftAnalytics.Services;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
-var builder = Host.CreateDefaultBuilder(args)
-    .ConfigureServices(services =>
+var builder = WebApplication.CreateBuilder(args);
+
+// Добавляем CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
     {
-        services.AddSingleton<LogParser>();
-        services.AddSingleton<MetricsCollector>();
-        services.AddHostedService<MetricsCollector>(provider => provider.GetRequiredService<MetricsCollector>());
-        services.AddHostedService<WebServer>();
-    })
-    .ConfigureLogging(logging =>
-    {
-        logging.ClearProviders();
-        logging.AddConsole();
-        logging.SetMinimumLevel(LogLevel.Information);
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
+});
 
-var host = builder.Build();
+var app = builder.Build();
 
-// Запускаем сервисы в фоне
-await host.StartAsync();
+app.UseCors("AllowAll");
+app.UseStaticFiles();
 
-var metricsCollector = host.Services.GetRequiredService<MetricsCollector>();
-
-Console.WriteLine("=== DriftNet Analytics Dashboard ===");
-Console.WriteLine("🌐 Web Dashboard: http://localhost:8080");
-Console.WriteLine("Type 'help' for available commands. Type 'exit' to quit.");
-Console.WriteLine();
-
-// Ждем немного для сбора первых метрик
-await Task.Delay(TimeSpan.FromSeconds(10));
-
-while (true)
+// Главная страница с аналитикой
+app.MapGet("/", async (HttpContext context) =>
 {
-    Console.Write("analytics> ");
-    var input = Console.ReadLine()?.Trim().ToLower();
-    
-    if (string.IsNullOrEmpty(input)) continue;
-    
-    switch (input)
-    {
-        case "help":
-            ShowHelp();
-            break;
-            
-        case "exit":
-            await host.StopAsync();
-            return;
-            
-        case "stats":
-            ShowRealTimeStats(metricsCollector);
-            break;
-            
-        case "nodes":
-            ShowNodeActivity(metricsCollector);
-            break;
-            
-        case "chunks":
-            ShowChunkPaths(metricsCollector);
-            break;
-            
-        case "export":
-            ExportMetrics(metricsCollector);
-            break;
-            
-        case "web":
-            OpenWebDashboard();
-            break;
-            
-        case "clear":
-            Console.Clear();
-            break;
-            
-        default:
-            Console.WriteLine($"Unknown command: {input}. Type 'help' for available commands.");
-            break;
-    }
-    
-    Console.WriteLine();
-}
-
-static void ShowHelp()
-{
-    Console.WriteLine("Available commands:");
-    Console.WriteLine("  stats   - Show real-time network statistics");
-    Console.WriteLine("  nodes   - Show node activity and metrics");
-    Console.WriteLine("  chunks  - Show chunk paths and distribution");
-    Console.WriteLine("  export  - Export current metrics as JSON");
-    Console.WriteLine("  web     - Open web dashboard in browser");
-    Console.WriteLine("  clear   - Clear console");
-    Console.WriteLine("  help    - Show this help");
-    Console.WriteLine("  exit    - Exit the application");
-}
-
-static void ShowRealTimeStats(MetricsCollector collector)
-{
-    var stats = collector.GetRealTimeStats();
-    
-    Console.WriteLine("=== Real-Time Network Statistics ===");
-    Console.WriteLine($"Timestamp: {stats["timestamp"]}");
-    Console.WriteLine($"Active Nodes: {stats["activeNodes"]}");
-    Console.WriteLine($"Total Chunks in Flight: {stats["totalChunksInFlight"]}");
-    Console.WriteLine($"Total Bytes in Flight: {FormatBytes((int)stats["totalBytesInFlight"])}");
-    Console.WriteLine($"Average TTL: {stats["averageTTL"]:F1}");
-}
-
-static void ShowNodeActivity(MetricsCollector collector)
-{
-    var stats = collector.GetRealTimeStats();
-    var nodeActivity = (Dictionary<string, object>)stats["nodeActivity"];
-    
-    Console.WriteLine("=== Node Activity ===");
-    Console.WriteLine($"{"Node",-8} {"Received",-10} {"Forwarded",-10} {"Bytes",-12} {"Avg TTL",-8} {"Last Activity",-20}");
-    Console.WriteLine(new string('-', 70));
-    
-    foreach (var node in nodeActivity.OrderBy(n => n.Key))
-    {
-        var nodeData = (JsonElement)node.Value;
-        var lastActivity = nodeData.GetProperty("lastActivity").GetDateTime();
+    var html = @"
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>DriftNet Analytics</title>
+    <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
+    <style>
+        .card { margin-bottom: 1rem; }
+        .metric-card { text-align: center; }
+        .metric-value { font-size: 2rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class='container-fluid mt-4'>
+        <h1 class='text-center mb-4'>🌊 DriftNet Analytics Dashboard</h1>
         
-        Console.WriteLine($"{node.Key,-8} " +
-                         $"{nodeData.GetProperty("chunksReceived").GetInt32(),-10} " +
-                         $"{nodeData.GetProperty("chunksForwarded").GetInt32(),-10} " +
-                         $"{FormatBytes(nodeData.GetProperty("totalBytes").GetInt32()),-12} " +
-                         $"{nodeData.GetProperty("averageTTL").GetDouble():F1,-8} " +
-                         $"{lastActivity:HH:mm:ss}");
-    }
-}
+        <div class='row' id='metrics'>
+            <div class='col-md-3'>
+                <div class='card bg-primary text-white metric-card'>
+                    <div class='card-body'>
+                        <h5>Total Nodes</h5>
+                        <div class='metric-value' id='totalNodes'>-</div>
+                        <small>Active: <span id='activeNodes'>-</span></small>
+                    </div>
+                </div>
+            </div>
+            <div class='col-md-3'>
+                <div class='card bg-success text-white metric-card'>
+                    <div class='card-body'>
+                        <h5>Chunks in Flight</h5>
+                        <div class='metric-value' id='totalChunks'>-</div>
+                        <small><span id='totalBytes'>-</span></small>
+                    </div>
+                </div>
+            </div>
+            <div class='col-md-3'>
+                <div class='card bg-info text-white metric-card'>
+                    <div class='card-body'>
+                        <h5>Avg TTL</h5>
+                        <div class='metric-value' id='avgTTL'>-</div>
+                        <small>Time to Live</small>
+                    </div>
+                </div>
+            </div>
+            <div class='col-md-3'>
+                <div class='card bg-warning text-white metric-card'>
+                    <div class='card-body'>
+                        <h5>Last Updated</h5>
+                        <div class='metric-value' id='lastUpdated'>-</div>
+                        <small>Real-time</small>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-static void ShowChunkPaths(MetricsCollector collector)
-{
-    var stats = collector.GetRealTimeStats();
-    var chunkPaths = (JsonElement)stats["chunkPaths"];
-    
-    Console.WriteLine("=== Chunk Paths ===");
-    Console.WriteLine($"Active chunks: {chunkPaths.GetArrayLength()}");
-    Console.WriteLine();
-    
-    foreach (var chunk in chunkPaths.EnumerateArray().Take(10)) // Показываем первые 10
-    {
-        var chunkId = chunk.GetProperty("chunkId").GetString();
-        var path = chunk.GetProperty("path");
-        var totalHops = chunk.GetProperty("totalHops").GetInt32();
-        var startTime = chunk.GetProperty("startTime").GetDateTime();
-        
-        Console.WriteLine($"Chunk: {chunkId}");
-        Console.WriteLine($"  Path: {string.Join(" → ", path.EnumerateArray().Select(n => n.GetString()))}");
-        Console.WriteLine($"  Hops: {totalHops}, Started: {startTime:HH:mm:ss}");
-        Console.WriteLine();
-    }
-    
-    if (chunkPaths.GetArrayLength() > 10)
-    {
-        Console.WriteLine($"... and {chunkPaths.GetArrayLength() - 10} more chunks");
-    }
-}
+        <div class='row'>
+            <div class='col-12'>
+                <div class='card'>
+                    <div class='card-header'>
+                        <h5>Node Activity</h5>
+                    </div>
+                    <div class='card-body'>
+                        <div class='table-responsive'>
+                            <table class='table table-striped' id='nodesTable'>
+                                <thead>
+                                    <tr>
+                                        <th>Node ID</th>
+                                        <th>Status</th>
+                                        <th>Chunks Received</th>
+                                        <th>Chunks Forwarded</th>
+                                        <th>Last Activity</th>
+                                    </tr>
+                                </thead>
+                                <tbody id='nodesBody'>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-static void ExportMetrics(MetricsCollector collector)
+    <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>
+    <script>
+        function updateMetrics() {
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('totalNodes').textContent = data.totalNodes || 0;
+                    document.getElementById('activeNodes').textContent = data.activeNodes || 0;
+                    document.getElementById('totalChunks').textContent = data.totalChunks || 0;
+                    document.getElementById('totalBytes').textContent = formatBytes(data.totalBytes || 0);
+                    document.getElementById('avgTTL').textContent = (data.averageTTL || 0).toFixed(1);
+                    document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+                    
+                    updateNodesTable(data.nodes || []);
+                })
+                .catch(error => {
+                    console.error('Error fetching metrics:', error);
+                });
+        }
+
+        function updateNodesTable(nodes) {
+            const tbody = document.getElementById('nodesBody');
+            tbody.innerHTML = '';
+            
+            nodes.forEach(node => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class='badge bg-primary'>${node.nodeId}</span></td>
+                    <td><span class='badge ${getStatusBadgeClass(node.status)}'>${node.status}</span></td>
+                    <td>${node.chunksReceived || 0}</td>
+                    <td>${node.chunksForwarded || 0}</td>
+                    <td>${new Date(node.lastActivity).toLocaleTimeString()}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getStatusBadgeClass(status) {
+            switch(status.toLowerCase()) {
+                case 'running': return 'bg-success';
+                case 'exited': return 'bg-danger';
+                case 'created': return 'bg-warning';
+                default: return 'bg-secondary';
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Обновляем метрики каждые 2 секунды
+        setInterval(updateMetrics, 2000);
+        updateMetrics(); // Первоначальная загрузка
+    </script>
+</body>
+</html>";
+
+    context.Response.ContentType = "text/html";
+    await context.Response.WriteAsync(html);
+});
+
+// API endpoint для получения метрик
+app.MapGet("/api/metrics", async (HttpContext context) =>
 {
-    var json = collector.ExportMetricsAsJson();
-    var filename = $"driftnet-metrics-{DateTime.Now:yyyyMMdd-HHmmss}.json";
-    
     try
     {
-        File.WriteAllText(filename, json);
-        Console.WriteLine($"Metrics exported to {filename}");
+        var metrics = await CollectDockerMetrics();
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync(JsonSerializer.Serialize(metrics));
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Failed to export metrics: {ex.Message}");
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = ex.Message }));
     }
+});
+
+// Health check endpoint
+app.MapGet("/api/health", () =>
+{
+    return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
+});
+
+async Task<object> CollectDockerMetrics()
+{
+    // Простая симуляция метрик для демонстрации
+    var random = new Random();
+
+    return new
+    {
+        totalNodes = 20,
+        activeNodes = 20,
+        totalChunks = random.Next(50, 200),
+        totalBytes = random.Next(10000000, 50000000),
+        averageTTL = random.Next(8000, 10000),
+        lastUpdated = DateTime.UtcNow,
+        nodes = Enumerable.Range(1, 20).Select(i => new
+        {
+            nodeId = $"node-{i}",
+            status = "running",
+            chunksReceived = random.Next(10, 50),
+            chunksForwarded = random.Next(10, 50),
+            lastActivity = DateTime.UtcNow.AddSeconds(-random.Next(0, 60))
+        }).ToArray()
+    };
 }
 
-static void OpenWebDashboard()
-{
-    try
-    {
-        var url = "http://localhost:8080";
-        Console.WriteLine($"Opening web dashboard: {url}");
-        
-        // Попытка открыть браузер
-        var process = new System.Diagnostics.Process();
-        process.StartInfo.FileName = "open"; // macOS
-        process.StartInfo.Arguments = url;
-        process.Start();
-    }
-    catch
-    {
-        try
-        {
-            var process = new System.Diagnostics.Process();
-            process.StartInfo.FileName = "xdg-open"; // Linux
-            process.StartInfo.Arguments = "http://localhost:8080";
-            process.Start();
-        }
-        catch
-        {
-            Console.WriteLine("Please open http://localhost:8080 in your browser manually.");
-        }
-    }
-}
+Console.WriteLine("🌊 DriftNet Analytics starting...");
+Console.WriteLine("📊 Web interface: http://localhost:8080");
+Console.WriteLine("🔌 API endpoint: http://localhost:8080/api/metrics");
 
-static string FormatBytes(int bytes)
-{
-    string[] sizes = { "B", "KB", "MB", "GB" };
-    double len = bytes;
-    int order = 0;
-    
-    while (len >= 1024 && order < sizes.Length - 1)
-    {
-        order++;
-        len = len / 1024;
-    }
-    
-    return $"{len:0.#} {sizes[order]}";
-} 
+app.Run();

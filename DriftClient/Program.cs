@@ -9,7 +9,7 @@ using System.Collections.Generic;
 // === Конфигурация ===
 var coordinatorUrl = Environment.GetEnvironmentVariable("COORDINATOR_URL") ?? "http://localhost:8000";
 var chunkSize = int.Parse(Environment.GetEnvironmentVariable("CHUNK_SIZE") ?? "256000");
-var ttl = int.Parse(Environment.GetEnvironmentVariable("TTL") ?? "10000");
+var ttl = int.Parse(Environment.GetEnvironmentVariable("TTL") ?? "50");
 
 Console.WriteLine("DriftNet Client - P2P File Network Client");
 Console.WriteLine("Type 'help' for available commands. Type 'exit' to quit.\n");
@@ -89,7 +89,7 @@ string[] ParseArgs(string input)
         else sb.Append(c);
     }
     if (sb.Length > 0) args.Add(sb.ToString());
-    return args.ToArray();
+    return [.. args];
 }
 
 // === Функция загрузки файла ===
@@ -115,19 +115,19 @@ async Task UploadFile(string filePath)
 
     // === Получение ВСЕХ пиров ===
     using var httpClient = new HttpClient();
-    List<PeerInfo> allPeers = new();
+    List<PeerInfo> allPeers = [];
 
     try
     {
         var response = await httpClient.GetStringAsync($"{coordinatorUrl}/peers");
-        allPeers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<PeerInfo>();
-        
+        allPeers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+
         if (allPeers.Count == 0)
         {
             Console.WriteLine("[ERROR] No peers available");
             return;
         }
-        
+
         Console.WriteLine($"[PEERS] Found {allPeers.Count} peers - will use ALL nodes for continuous flow");
     }
     catch (Exception ex)
@@ -146,12 +146,12 @@ async Task UploadFile(string filePath)
         var startIndex = i * chunkSize;
         var endIndex = Math.Min(startIndex + chunkSize, fileBytes.Length);
         var chunkData = fileBytes[startIndex..endIndex];
-        
+
         Console.WriteLine($"[UPLOAD] {chunkId} ({chunkData.Length} bytes)");
-        
+
         // Выбираем 3 случайных узла для каждого чанка
         var selectedPeers = allPeers.OrderBy(x => random.Next()).Take(3).ToList();
-        
+
         // Отправляем каждый чанк только на 3 случайных узла
         var chunkTasks = selectedPeers.Select(async peer =>
         {
@@ -159,16 +159,16 @@ async Task UploadFile(string filePath)
             {
                 using var client = new TcpClient();
                 await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
-                
+
                 using var stream = client.GetStream();
                 using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
-                
+
                 writer.Write(chunkId);
                 writer.Write(ttl);
                 writer.Write(chunkData.Length);
                 writer.Write(chunkData);
                 writer.Flush();
-                
+
                 Console.WriteLine($"[UPLOAD] {chunkId} → {peer.Ip}:{peer.Port}");
             }
             catch (Exception ex)
@@ -176,7 +176,7 @@ async Task UploadFile(string filePath)
                 Console.WriteLine($"[ERROR] connection failed to peer {peer.Id}: {ex.Message}");
             }
         });
-        
+
         tasks.AddRange(chunkTasks);
     }
 
@@ -197,19 +197,19 @@ async Task GetFile(string chunkPrefix, string outputFile)
 
     // === Получение списка всех пиров ===
     using var httpClient = new HttpClient();
-    List<PeerInfo> peers = new();
+    List<PeerInfo> peers = [];
 
     try
     {
         var response = await httpClient.GetStringAsync($"{coordinatorUrl}/peers");
-        peers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<PeerInfo>();
-        
+        peers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+
         if (peers.Count == 0)
         {
             Console.WriteLine("[ERROR] No peers available");
             return;
         }
-        
+
         Console.WriteLine($"[PEERS] Found {peers.Count} peers");
     }
     catch (Exception ex)
@@ -226,14 +226,14 @@ async Task GetFile(string chunkPrefix, string outputFile)
         {
             using var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
-            
+
             using var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
             using var reader = new BinaryReader(stream, Encoding.UTF8);
-            
+
             writer.Write("RECOVERY:");
             writer.Flush();
-            
+
             var response = reader.ReadString();
             Console.WriteLine($"[RECOVERY] Node {peer.Ip}:{peer.Port} - {response}");
         }
@@ -259,7 +259,7 @@ async Task GetFile(string chunkPrefix, string outputFile)
     {
         var chunkId = $"{chunkPrefix}{chunkIndex:D4}";
         var found = false;
-        
+
         // Пробуем получить чанк от каждого пира
         foreach (var peer in peers)
         {
@@ -267,18 +267,18 @@ async Task GetFile(string chunkPrefix, string outputFile)
             {
                 using var client = new TcpClient();
                 await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
-                
+
                 using var stream = client.GetStream();
                 using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
                 using var reader = new BinaryReader(stream, Encoding.UTF8);
-                
+
                 // Отправляем GET-запрос
                 writer.Write($"GET:{chunkId}");
                 writer.Flush();
-                
+
                 // Читаем ответ
                 var payloadLength = reader.ReadInt32();
-                
+
                 if (payloadLength > 0)
                 {
                     var payload = reader.ReadBytes(payloadLength);
@@ -295,13 +295,13 @@ async Task GetFile(string chunkPrefix, string outputFile)
                 continue;
             }
         }
-        
+
         if (!found)
         {
             Console.WriteLine($"[MISSING] {chunkId}");
             consecutiveEmpty++;
         }
-        
+
         chunkIndex++;
     }
 
@@ -313,14 +313,14 @@ async Task GetFile(string chunkPrefix, string outputFile)
         {
             using var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
-            
+
             using var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
             using var reader = new BinaryReader(stream, Encoding.UTF8);
-            
+
             writer.Write("NORMAL:");
             writer.Flush();
-            
+
             var response = reader.ReadString();
             Console.WriteLine($"[NORMAL] Node {peer.Ip}:{peer.Port} - {response}");
         }
@@ -350,7 +350,7 @@ async Task GetFile(string chunkPrefix, string outputFile)
         }
 
         using var fileStream = File.Create(outputFile);
-        
+
         // Записываем чанки в порядке их индексов
         for (int i = 0; i < chunkIndex; i++)
         {
@@ -359,7 +359,7 @@ async Task GetFile(string chunkPrefix, string outputFile)
                 await fileStream.WriteAsync(chunkData);
             }
         }
-        
+
         Console.WriteLine($"[DONE] Output saved to {outputFile}");
         Console.WriteLine($"[INFO] Recovered {chunks.Count} chunks, total size: {chunks.Values.Sum(c => c.Length)} bytes");
     }
@@ -370,4 +370,4 @@ async Task GetFile(string chunkPrefix, string outputFile)
 }
 
 // === Типы данных ===
-record PeerInfo(string Id, string Ip, int Port); 
+record PeerInfo(string Id, string Ip, int Port);
