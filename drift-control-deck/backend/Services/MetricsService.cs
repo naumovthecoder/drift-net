@@ -2,12 +2,15 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
 
 namespace DriftControlDeck.Services;
 
 public class MetricsService
 {
     private readonly ILogger<MetricsService> _logger;
+    private readonly ConcurrentDictionary<string, ChunkInfo> _liveChunks = new();
+    private readonly ConcurrentDictionary<string, FileInfo> _trackedFiles = new();
 
     public MetricsService(ILogger<MetricsService> logger)
     {
@@ -31,12 +34,22 @@ public class MetricsService
             var tasks = names.Select(async name => await GetNodeMetricsAsync(name));
             var results = await Task.WhenAll(tasks);
 
-            return results;
+            return new
+            {
+                nodes = results,
+                files = await GetFileStatusAsync(),
+                chunks = GetLiveChunksStatus()
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to collect metrics");
-            return Array.Empty<object>();
+            return new
+            {
+                nodes = Array.Empty<object>(),
+                files = Array.Empty<object>(),
+                chunks = new { total = 0, active = 0 }
+            };
         }
     }
 
@@ -94,6 +107,7 @@ public class MetricsService
         var lines = logs.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         
         var ttlValues = new List<int>();
+        var now = DateTime.UtcNow;
 
         foreach (var line in lines)
         {
@@ -102,11 +116,24 @@ public class MetricsService
             {
                 metrics.ReceivedChunks++;
                 
+                var currentTtl = 0;
+                
                 // Извлекаем TTL
                 var ttlMatch = Regex.Match(line, @"TTL=(\d+)");
                 if (ttlMatch.Success && int.TryParse(ttlMatch.Groups[1].Value, out var ttl))
                 {
                     ttlValues.Add(ttl);
+                    currentTtl = ttl;
+                }
+
+                // Извлекаем chunk ID
+                var chunkMatch = Regex.Match(line, @"Chunk (chunk-\d+)");
+                if (chunkMatch.Success)
+                {
+                    var chunkId = chunkMatch.Groups[1].Value;
+                    _liveChunks.AddOrUpdate(chunkId, 
+                        new ChunkInfo { Id = chunkId, LastSeen = now, TTL = currentTtl },
+                        (key, old) => { old.LastSeen = now; old.TTL = currentTtl; return old; });
                 }
             }
             
@@ -138,6 +165,68 @@ public class MetricsService
         return metrics;
     }
 
+    private async Task<object> GetFileStatusAsync()
+    {
+        // Группируем чанки по файлам
+        var fileGroups = _liveChunks.Values
+            .GroupBy(c => ExtractFilePrefix(c.Id))
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .ToList();
+
+        var fileStatus = new List<object>();
+
+        foreach (var group in fileGroups)
+        {
+            var chunks = group.OrderBy(c => ExtractChunkNumber(c.Id)).ToList();
+            var totalChunks = chunks.Count;
+            var activeChunks = chunks.Count(c => (DateTime.UtcNow - c.LastSeen).TotalMinutes < 5); // Активные за последние 5 минут
+            var avgTTL = chunks.Where(c => c.TTL > 0).Select(c => c.TTL).DefaultIfEmpty(0).Average();
+            var recoveryRate = totalChunks > 0 ? (double)activeChunks / totalChunks * 100 : 0;
+
+            fileStatus.Add(new
+            {
+                id = group.Key,
+                totalChunks = totalChunks,
+                activeChunks = activeChunks,
+                recoveryRate = Math.Round(recoveryRate, 1),
+                avgTTL = Math.Round(avgTTL, 0),
+                status = recoveryRate >= 90 ? "healthy" : recoveryRate >= 50 ? "degraded" : "critical",
+                lastSeen = chunks.Max(c => c.LastSeen)
+            });
+        }
+
+        return fileStatus.OrderByDescending(f => ((dynamic)f).lastSeen).ToList();
+    }
+
+    private object GetLiveChunksStatus()
+    {
+        var now = DateTime.UtcNow;
+        var activeChunks = _liveChunks.Values.Count(c => (now - c.LastSeen).TotalMinutes < 5);
+        var totalChunks = _liveChunks.Count;
+        
+        return new
+        {
+            total = totalChunks,
+            active = activeChunks,
+            inactive = totalChunks - activeChunks,
+            avgTTL = _liveChunks.Values.Where(c => c.TTL > 0).Select(c => c.TTL).DefaultIfEmpty(0).Average()
+        };
+    }
+
+    private string ExtractFilePrefix(string chunkId)
+    {
+        // chunk-0001 -> "file"
+        var match = Regex.Match(chunkId, @"^(chunk)-\d+$");
+        return match.Success ? "file" : "";
+    }
+
+    private int ExtractChunkNumber(string chunkId)
+    {
+        // chunk-0001 -> 1
+        var match = Regex.Match(chunkId, @"chunk-(\d+)");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var num) ? num : 0;
+    }
+
     public async Task StreamMetricsAsync(WebSocket socket, CancellationToken token)
     {
         while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
@@ -158,4 +247,19 @@ public class NodeMetrics
     public int LoopsDropped { get; set; }
     public int CirculatingChunks { get; set; }
     public int AverageTTL { get; set; }
+}
+
+public class ChunkInfo
+{
+    public string Id { get; set; } = "";
+    public DateTime LastSeen { get; set; }
+    public int TTL { get; set; }
+}
+
+public class FileInfo
+{
+    public string Id { get; set; } = "";
+    public int TotalChunks { get; set; }
+    public int ActiveChunks { get; set; }
+    public DateTime LastActivity { get; set; }
 } 
