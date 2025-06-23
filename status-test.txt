@@ -1,0 +1,3 @@
+DriftNet File Status Test!
+This file will demonstrate recovery metrics.
+We can see chunk availability and file health status.
