@@ -146,16 +146,15 @@ static async Task ForwardChunkStreamAsync(string chunkId, int ttl, int payloadSi
     using var httpClient = new HttpClient();
     try
     {
-        var response = await httpClient.GetStringAsync($"{coordinatorUrl}/random-peers?count=1");
-        var peers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        // Используем новый эндпоинт для получения следующего узла в цепочке
+        var response = await httpClient.GetStringAsync($"{coordinatorUrl}/next-peer");
+        var peer = JsonSerializer.Deserialize<PeerInfo>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-        if (peers is null || peers.Count == 0)
+        if (peer is null)
         {
-            Console.WriteLine("[WARN] No peers found");
+            Console.WriteLine("[WARN] No next peer found");
             return;
         }
-
-        var peer = peers.First();
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);
@@ -199,16 +198,15 @@ static async Task ForwardChunkAsync(string chunkId, int ttl, byte[] payload, str
     using var httpClient = new HttpClient();
     try
     {
-        var response = await httpClient.GetStringAsync($"{coordinatorUrl}/random-peers?count=1");
-        var peers = JsonSerializer.Deserialize<List<PeerInfo>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        // Используем новый эндпоинт для получения следующего узла в цепочке
+        var response = await httpClient.GetStringAsync($"{coordinatorUrl}/next-peer");
+        var peer = JsonSerializer.Deserialize<PeerInfo>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-        if (peers is null || peers.Count == 0)
+        if (peer is null)
         {
-            Console.WriteLine("[WARN] No peers found");
+            Console.WriteLine("[WARN] No next peer found");
             return;
         }
-
-        var peer = peers.First();
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Parse(peer.Ip), peer.Port);

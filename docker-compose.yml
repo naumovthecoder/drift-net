@@ -358,41 +358,48 @@ services:
       coordinator:
         condition: service_healthy
 
-  uploader:
+  # # === Аналитика сети ===
+  # drift-analytics:
+  #   build:
+  #     context: .
+  #     dockerfile: DriftAnalytics/Dockerfile
+  #   container_name: drift-analytics
+  #   environment:
+  #     - DOCKER_COMPOSE_PATH=/app
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./analytics-output:/app/analytics-output
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - driftnet
+  #   depends_on:
+  #     - coordinator
+  #   stdin_open: true
+  #   tty: true
+  #   command: dotnet DriftAnalytics.dll
+
+  # === Новый объединенный клиент ===
+  drift-client:
     build:
       context: .
-      dockerfile: DriftUploader/Dockerfile
-    container_name: uploader
+      dockerfile: DriftClient/Dockerfile
+    container_name: drift-client
     environment:
       - COORDINATOR_URL=http://coordinator:8000
       - CHUNK_SIZE=256000
-      - TTL=30
+      - TTL=10000
     volumes:
       - ./testfile.txt:/app/testfile.txt:ro
-    networks:
-      - driftnet
-    depends_on:
-      coordinator:
-        condition: service_healthy
-    tty: true
-    stdin_open: true
-
-  getter:
-    build:
-      context: .
-      dockerfile: DriftGetter/Dockerfile
-    container_name: getter
-    environment:
-      - COORDINATOR_URL=http://coordinator:8000
-    volumes:
       - ./output:/app/output
     networks:
       - driftnet
     depends_on:
       coordinator:
         condition: service_healthy
-    tty: true
     stdin_open: true
+    tty: true
+    command: dotnet DriftClient.dll
 
 networks:
   driftnet:
