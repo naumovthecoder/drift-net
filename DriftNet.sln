@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DriftClient", "DriftClient\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DriftAnalytics", "DriftAnalytics\DriftAnalytics.csproj", "{D4E5F6G7-H8I9-0123-DEFG-456789012345}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DriftNode.Tests", "DriftNode.Tests\DriftNode.Tests.csproj", "{677CFA12-772A-403A-AC49-D96CD42FD224}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
 		{D4E5F6G7-H8I9-0123-DEFG-456789012345}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D4E5F6G7-H8I9-0123-DEFG-456789012345}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4E5F6G7-H8I9-0123-DEFG-456789012345}.Release|Any CPU.Build.0 = Release|Any CPU
+		{677CFA12-772A-403A-AC49-D96CD42FD224}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{677CFA12-772A-403A-AC49-D96CD42FD224}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{677CFA12-772A-403A-AC49-D96CD42FD224}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{677CFA12-772A-403A-AC49-D96CD42FD224}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

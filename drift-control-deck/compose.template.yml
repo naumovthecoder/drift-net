@@ -1,0 +1,47 @@
+version: '3.8'
+services:
+  coordinator:
+    build:
+      context: ..
+      dockerfile: DriftCoordinator/Dockerfile
+    container_name: coordinator
+    ports:
+      - "8000:8000"
+    networks:
+      - driftnet
+      
+  driftnode:
+    build:
+      context: ..
+      dockerfile: DriftNode/Dockerfile
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+      - RECENT_IDS_MAX=500
+      - RECENT_ID_TTL_SEC=10
+      - SEND_DELAY_MIN_MS=10
+      - SEND_DELAY_MAX_MS=50
+    deploy:
+      replicas: ${DRIFTNODE_REPLICAS}
+    depends_on:
+      - coordinator
+    networks:
+      - driftnet
+      
+  drift-client:
+    build:
+      context: ..
+      dockerfile: DriftClient/Dockerfile
+    container_name: drift-client
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+      - CHUNK_SIZE=256000
+      - TTL=10000
+    depends_on:
+      - coordinator
+    networks:
+      - driftnet
+    tty: true
+
+networks:
+  driftnet:
+    driver: bridge 

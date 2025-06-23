@@ -1,3 +1,10 @@
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+WORKDIR /app
+EXPOSE 8080
+
+# Устанавливаем curl для проверки здоровья
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
@@ -15,12 +22,11 @@ RUN dotnet build DriftAnalytics/DriftAnalytics.csproj -c Release -o /app/build
 FROM build AS publish
 RUN dotnet publish DriftAnalytics/DriftAnalytics.csproj -c Release -o /app/publish
 
-# Финальный образ
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Устанавливаем Docker CLI для доступа к логам контейнеров
-RUN apt-get update && apt-get install -y docker.io && rm -rf /var/lib/apt/lists/*
+# Монтируем Docker socket для доступа к API
+VOLUME ["/var/run/docker.sock"]
 
 ENTRYPOINT ["dotnet", "DriftAnalytics.dll"] 

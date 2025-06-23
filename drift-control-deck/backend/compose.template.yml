@@ -1,0 +1,37 @@
+services:
+  coordinator:
+    build:
+      context: ../../
+      dockerfile: DriftCoordinator/Dockerfile
+    container_name: coordinator
+    ports:
+      - "8000:8000"
+
+  driftnode:
+    build:
+      context: ../../
+      dockerfile: DriftNode/Dockerfile
+    deploy:
+      replicas: ${DRIFTNODE_REPLICAS}
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+    depends_on:
+      coordinator:
+        condition: service_started
+
+  drift-client:
+    build:
+      context: ../../
+      dockerfile: DriftClient/Dockerfile
+    container_name: drift-client
+    volumes:
+      - ../../output:/app/output
+      - ../../testfile.txt:/app/testfile.txt:ro
+    tty: true
+    environment:
+      - COORDINATOR_URL=http://coordinator:8000
+      - CHUNK_SIZE=256000
+      - TTL=10000
+    command: dotnet DriftClient.dll
+
+  # drift-client service defined above with volumes and command 

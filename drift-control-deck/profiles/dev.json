@@ -1,0 +1,7 @@
+{
+  "name": "Default dev profile",
+  "env": {
+    "DELAY_MS": "50",
+    "PACKET_LOSS": "0.05"
+  }
+} 
